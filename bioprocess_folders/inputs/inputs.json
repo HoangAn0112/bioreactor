@@ -314,19 +314,31 @@
     },
     "mu_max": {
       "values": [
+<<<<<<< HEAD
         0.0075
+=======
+        0.010458988383995716
+>>>>>>> eeb11c8 (updated bioprocess_folders with experimental datasets)
       ],
       "unit": "1/min"
     },
     "K_subs": {
       "values": [
+<<<<<<< HEAD
         0.005
+=======
+        0.059823684301573206
+>>>>>>> eeb11c8 (updated bioprocess_folders with experimental datasets)
       ],
       "unit": "mol/L"
     },
     "K_L_a": {
       "values": [
+<<<<<<< HEAD
         2.0
+=======
+        2.272098311969172
+>>>>>>> eeb11c8 (updated bioprocess_folders with experimental datasets)
       ],
       "unit": "1/min"
     }
@@ -334,13 +346,21 @@
   "initials": {
     "Sub": {
       "values": [
+<<<<<<< HEAD
         0.13
+=======
+        0.13612529304776586
+>>>>>>> eeb11c8 (updated bioprocess_folders with experimental datasets)
       ],
       "unit": "mol"
     },
     "Biomass": {
       "values": [
+<<<<<<< HEAD
         0.04267
+=======
+        0.04837234387219123
+>>>>>>> eeb11c8 (updated bioprocess_folders with experimental datasets)
       ],
       "unit": "g"
     },
