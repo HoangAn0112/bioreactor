@@ -1,0 +1,5 @@
+**/__pycache__/
+*.pyc
+/bioprocess_folders/*.pyc
+/bioprocess_folders/__pycache__/
+/bioprocess_folders/bioprocess_exp_main.ipynb
