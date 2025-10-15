@@ -14,8 +14,10 @@ import scipy
 from scipy.integrate import odeint
 import keras
 import bayesflow as bf
+from tools import *
 
-data = pd.read_csv("experimental_dataset/bioreactor_18.csv")
+num_reactor = 18
+data = pd.read_csv(f"experimental_dataset/bioreactor_{num_reactor}.csv")
 inputs_dir = "./experimental_inputs"
 outputs_dir = "./experimental_outputs"
 params_to_infer = ["mu_max", "K_subs", "K_L_a"]
@@ -23,24 +25,44 @@ observables = ["Biomass"]
 loaded = load_model_inputs(inputs_dir, basename="ambr_run1_140323_13-18__R1__inputs")
 mecanistic_solution= run_from_inputs(loaded)
 
+param_distributions = {
+    "mu_max":   {"dist": "uniform", "low": 1e-4, "high": 1},
+    "K_subs":   {"dist": "uniform",  "low": 1e-2, "high": 10},
+    "K_L_a":    {"dist": "uniform", "low": 0.05, "high": 3}
+}
+
+
+
 time_min = data["time"].min()
 time_max = data["time"].max()
 loaded["t_span"] = [time_min, time_max]
 loaded["t_eval"] = data["time"].values
 
 
-def prior_sample(low=0, high=3, batch_size = 1):
-    """Sample n_samples from a uniform distribution [low, high)."""
+def prior_sample(batch_size=1, param_distributions=param_distributions):
+    """Sample n_samples from specified distributions for each parameter."""
+    if param_distributions is None:
+        raise ValueError("param_distributions must be provided.")
+
     prior_sample = {k: [] for k in params_to_infer}
     for _ in range(batch_size):
-        arr = np.random.uniform(low, high, size=len(params_to_infer))
-        scaled = arr * np.array([loaded["params"][k]["values"][0] for k in params_to_infer])
-        for k, v in zip(params_to_infer, scaled):
+        sample = []
+        for k in params_to_infer:
+            dist_info = param_distributions[k]
+            
+            if dist_info["dist"] == "uniform":
+                v = np.random.uniform(dist_info["low"], dist_info["high"])
+            elif dist_info["dist"] == "normal":
+                v = np.random.normal(dist_info["loc"], dist_info["scale"])
+            elif dist_info["dist"] == "lognormal":
+                v = np.random.lognormal(dist_info["mean"], dist_info["sigma"])
+            else:
+                raise ValueError(f"Unknown distribution: {dist_info['dist']}")
+            # Scale by loaded value if needed
+            v = v * loaded["params"][k]["values"][0]
             prior_sample[k].append(v)
-    
     for k in prior_sample:
         prior_sample[k] = np.array(prior_sample[k])
-
     return prior_sample
 
 
@@ -83,7 +105,9 @@ def mechanistic_solver_array(**kwargs):
         combined[key] = arr
     return combined
 
+
 simulator = bf.make_simulator([prior_sample, mechanistic_solver])
+
 # sampled_params = prior_sample(low=0, high=2, batch_size=5)
 # samples = mechanistic_solver_array(**sampled_params)
 data_keys = params_to_infer + observables
@@ -120,11 +144,19 @@ workflow = bf.BasicWorkflow(
         standardize=["inference_variables", "summary_variables"]
     )
 
-epochs = 10
-batch_size = 32
+epochs = 200
+batch_size = 64
 num_simulation = 1000
 num_samples=5
 samples = simulator.sample(num_simulation)
+sampling = remove_nan_rows(samples, num_simulation)
+filename = f"simulated_dataset/bioractor_{num_reactor}_{num_simulation}.pth"
+torch.save(sampling, filename)
+
+plot_sampling_results(sampling, 
+                      obseravble_variable = observables, 
+                      size = num_simulation, 
+                      save_path = f"simulated_dataset/bioractor_{num_reactor}_")
 
 # grid = bf.diagnostics.plots.pairs_samples(
 #     samples, variable_keys=observables
@@ -136,7 +168,7 @@ history = workflow.fit_offline(
         batch_size=batch_size,
 )
 f = bf.diagnostics.plots.loss(history)
-#  plt.show()
+plt.show()
 
 data_infer = {i:np.array(data[i]).astype("float32").reshape(1,-1) for i in observables}
 posterior = workflow.sample(conditions=data_infer, num_samples=num_samples)
