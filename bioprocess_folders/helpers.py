@@ -76,26 +76,49 @@ if not rids:
     raise RuntimeError("No 'Bioreactor <ID> - <Signal>' columns found. Check CSV headers.")
 print("Detected reactor IDs:", rids)
 
-reactor_id = 18
+reactor_id = 15
+cutting_time_start = 425
 bioreactor_cols = [c for c in df_raw.columns if c.startswith(f"Bioreactor {reactor_id} -")]
 df_single_bio_reactor = df_raw[["time"] + bioreactor_cols]
 df_single_bio_reactor = df_single_bio_reactor.dropna(axis=1, how='all')
 
 od_col = f"Bioreactor {reactor_id} - Optical density"
-biomass_col = f"Bioreactor {reactor_id} - Biomass"
-conversion_factor = 0.35
+biomass_col = "Biomass"
+conversion_factor = 0.4267
 
 if od_col in df_single_bio_reactor.columns:
     df_single_bio_reactor = df_single_bio_reactor.dropna(subset=[od_col])
     df_single_bio_reactor[biomass_col] = df_single_bio_reactor[od_col] * conversion_factor
     df_single_bio_reactor = df_single_bio_reactor[["time", biomass_col]]
-    df_single_bio_reactor = df_single_bio_reactor.iloc[:323,:]
+    df_single_bio_reactor = df_single_bio_reactor[
+        # (df_single_bio_reactor["time"] >= 750) & (df_single_bio_reactor["time"] <= 1400)
+         df_single_bio_reactor["time"] >= cutting_time_start
+         ]
 
 else:
     print(f"Warning: {od_col} not found in columns. No OD filtering applied.")
 # df_single_bio_reactor = df_single_bio_reactor.iloc[:498,:]
 
-df_single_bio_reactor.to_csv(f"./experimental_dataset/bioreactor_{reactor_id}.csv", index=False)
+import matplotlib.pyplot as plt
+plt.figure(figsize=(8,5))
+plt.plot(
+    df_single_bio_reactor["time"],
+    df_single_bio_reactor["Biomass"],
+    marker="o",
+    linestyle="-",
+    linewidth=2.0,
+    markersize=4,
+    color="C0",
+    alpha=0.9,
+)
+plt.xlabel("Time (s)")
+plt.ylabel("Biomass")
+plt.title(f"Biomass vs Time — Bioreactor {reactor_id}")
+plt.grid(alpha=0.3, linestyle="--")
+plt.tight_layout()
+plt.show()
+
+df_single_bio_reactor.to_csv(f"./experimental_dataset/bioreactor_{reactor_id}_{cutting_time_start}.csv", index=False)
 
 
 

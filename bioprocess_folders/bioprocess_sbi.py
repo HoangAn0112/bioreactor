@@ -16,7 +16,7 @@ import keras
 import bayesflow as bf
 from tools import *
 
-num_reactor = "18_750"
+num_reactor = "15_425"
 data = pd.read_csv(f"experimental_dataset/bioreactor_{num_reactor}.csv")
 initial_observables = data.iloc[0,1]
 
@@ -28,13 +28,13 @@ loaded = load_model_inputs(inputs_dir, basename="ambr_run1_140323_13-18__R1__inp
 mecanistic_solution= run_from_inputs(loaded)
 
 param_distributions = {
-    "mu_max":   {"dist": "uniform", "low": 1e-4, "high": 5e-2},
-    "K_subs":   {"dist": "uniform",  "low": 1e-2, "high": 10},
-    "K_L_a":    {"dist": "uniform", "low": 0.05, "high": 3},
-    "Y_Sub":    {"dist": "normal", "loc": 0.35, "scale": 0.05},
+    "mu_max": {"dist": "uniform", "low": 1e-3, "high": 1e-1},
+    "K_subs": {"dist": "uniform", "low": 1e-4, "high": 1e-1},
+    "K_L_a": {"dist": "uniform", "low": 1e-2, "high": 1e1},
+    "Y_Sub":    {"dist": "normal", "loc": 0.45, "scale": 0.1},
 }
 
-time_min = data["time"].min()
+time_min = data["time"].min()   
 time_max = data["time"].max()
 loaded["t_span"] = [time_min, time_max]
 loaded["t_eval"] = data["time"].values
@@ -55,8 +55,8 @@ def prior_sample(batch_size=1, param_distributions=param_distributions):
                 v = np.random.uniform(dist_info["low"], dist_info["high"])
             elif dist_info["dist"] == "normal":
                 v = np.random.normal(dist_info["loc"], dist_info["scale"])
-            elif dist_info["dist"] == "lognormal":
-                v = np.random.lognormal(dist_info["mean"], dist_info["sigma"])
+            elif dist_info["dist"] == "log_uniform":
+                v = 10**np.random.uniform(dist_info["low"], dist_info["high"])
             else:
                 raise ValueError(f"Unknown distribution: {dist_info['dist']}")
             # Scale by loaded value if needed
@@ -137,7 +137,7 @@ adapter = (
     .convert_dtype("float64", "float32")
     .concatenate(params_to_infer, into="inference_variables")
     .as_time_series(observables)
-    .concatenate(observables, into = "summary_variables")
+    # .concatenate(observables, into = "summary_variables")
 )
 
 optimizer = keras.optimizers.Adam(
@@ -172,32 +172,35 @@ inference_network = bf.networks.CouplingFlow()
 workflow = bf.BasicWorkflow(
         simulator=simulator,
         adapter=adapter,
-        summary_network=summary_net,
+        # summary_network=summary_net,
         inference_network=inference_network,
         optimizer=optimizer,
         callbacks=lr_scheduler,
-        standardize=["inference_variables", "summary_variables"]
+        standardize=["inference_variables"]
     )
 
 epochs = 50
-batch_size = 62
+batch_size = 128
 num_simulation = 5000
-num_samples=15
-samples = simulator.sample(num_simulation)
-sampling = remove_nan_rows(samples, num_simulation)
-filename = f"simulated_dataset/bioractor_{num_reactor}_{num_simulation}log.pth"
-torch.save(sampling, filename)
+num_samples=20
 
-plot_sampling_results(sampling, 
-                      obseravble_variable = observables, 
-                      size = num_simulation, 
-                      save_path = f"simulated_dataset/bioractor_{num_reactor}_log")
+# SAMPLING DATA
+# samples = simulator.sample(num_simulation)
+# sampling = remove_nan_rows(samples, num_simulation)
+# filename = f"simulated_dataset/bioractor_{num_reactor}_{num_simulation}.pth"
+# torch.save(sampling, filename)
 
-# grid = bf.diagnostics.plots.pairs_samples(
-#     samples, variable_keys=observables
+# plot_sampling_results(sampling, 
+#                       obseravble_variable = observables, 
+#                       size = num_simulation, 
+#                       save_path = f"simulated_dataset/bioractor_{num_reactor}")
+
+# # grid = bf.diagnostics.plots.pairs_samples(
+# #     samples, variable_keys=observables
 # )
 
-file_path = f"simulated_dataset/bioractor_{num_reactor}_{num_simulation}log.pth"
+#LOAD DATA AGAIN AND TRAIN
+file_path = f"simulated_dataset/bioractor_{num_reactor}_{num_simulation}.pth"
 training_data = torch.load(file_path)
 sampling =  {k: v.numpy() if torch.is_tensor(v) else np.array(v) 
         for k, v in training_data.items()}
@@ -209,10 +212,25 @@ history = workflow.fit_offline(
 )
 f = bf.diagnostics.plots.loss(history)
 plt.show()
+# model_path = f"simulated_dataset/model_{num_reactor}_{num_simulation}.h5"
+# workflow.approximator.save(model_path)
 
-name = f"bioreactor_{num_reactor}_{num_simulation}_{num_samples}_inference_log"
+#INFERENCE
+# workflow = keras.saving.load_model(
+#     model_path,
+#     compile=False  # Disable compilation if not training
+# )
+name = f"bioreactor_{num_reactor}_{num_simulation}_{num_samples}"
 data_infer = {i:np.array(data[i]).astype("float32").reshape(1,-1) for i in observables}
 posterior = workflow.sample(conditions=data_infer, num_samples=num_samples)
+
+values = [posterior[k].reshape(-1) for k in params_to_infer] 
+values = np.stack(values, axis=1)  
+mask = np.all(values >= 0, axis=1)
+
+# Filter all arrays
+posterior = {k: v[:, mask, :] for k, v in posterior.items()}
+
 np.savez_compressed(f"{name}.npz", **{k: np.asarray(v) for k, v in posterior.items()})
 # posterior = pd.read_csv("outputs/solution_batch_264.csv")
 # posterior= posterior = {col: [np.array([x], dtype="float32") for x in posterior[col]] for col in posterior.columns}
@@ -231,6 +249,6 @@ for i, obs in enumerate(observables):
     plt.ylabel(obs)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"outputs/bioreactor_{num_reactor}_{num_simulation}_{num_samples}_inference_log.png")
+    plt.savefig(f"outputs/bioreactor_{num_reactor}_{num_simulation}_{num_samples}.png")
     plt.show()  
     plt.close()  
